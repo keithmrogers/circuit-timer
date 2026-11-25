@@ -14,24 +14,23 @@
   <body data-screen="setup">
     <main>
       <section id="setup" aria-labelledby="setup-title">
-        <h1 id="setup-title">My Strength Circuit</h1>
-        <p class="lede">No equipment. Just you and some floor space.</p>
+        <fieldset class="routines">
+          <legend>Routine</legend>
+          <div class="routine-list" id="routine-list"></div>
+        </fieldset>
+
+        <h1 id="setup-title"></h1>
+        <p class="lede" id="tagline"></p>
+        <p class="equipment" id="equipment"></p>
 
         <fieldset>
           <legend>Rounds</legend>
-          <div class="choices">
-            <label><input type="radio" name="rounds" value="1" /><span>1</span></label>
-            <label><input type="radio" name="rounds" value="2" checked /><span>2</span></label>
-            <label><input type="radio" name="rounds" value="3" /><span>3</span></label>
-          </div>
+          <div class="choices" id="rounds-choices"></div>
         </fieldset>
 
         <fieldset>
           <legend>Each move</legend>
-          <div class="choices">
-            <label><input type="radio" name="work" value="30" checked /><span>30 sec</span></label>
-            <label><input type="radio" name="work" value="40" /><span>40 sec</span></label>
-          </div>
+          <div class="choices" id="work-choices"></div>
         </fieldset>
 
         <label class="toggle"><input type="checkbox" id="sound" checked /> Sounds and voice</label>
@@ -51,6 +50,7 @@
 
         <h2 id="move-name" aria-live="assertive"></h2>
         <p id="cue" class="cue"></p>
+        <p id="switch" class="switch" hidden>Switch sides!</p>
         <div class="stage">
           <svg id="art" viewBox="0 0 160 92" role="img" aria-label=""></svg>
           <div class="clock">
@@ -74,7 +74,7 @@
         <p class="stars" aria-hidden="true">★ ★ ★</p>
         <h2 id="done-title">Great job!</h2>
         <p class="lede" id="done-summary"></p>
-        <p>Don't forget to tick today on your poster.</p>
+        <p>Nice work. Tick off today on your poster.</p>
         <button type="button" id="again" class="big">Back to start</button>
       </section>
     </main>

@@ -1,8 +1,16 @@
 # Circuit Timer
 
-A kid-friendly strength circuit for a tablet. It shows each move with a drawing and a big countdown, beeps at 3-2-1, and says the next move out loud. No equipment, no accounts, nothing to set up.
+Strength circuits for a tablet. Each move shows a drawing and a big countdown, beeps at 3-2-1, and says the next move out loud. Moves done one side at a time get a "Switch sides" call halfway. No accounts, nothing to set up.
 
-The routine: get ready (5 s), warm up (2 min), then 7 moves (squats, wall push-ups, glute bridges, bear crawl, plank, step-back lunges, flamingo balance) at 30 or 40 s each with 20 s rests, 1 to 3 rounds (60 s rest between rounds), then a 1 min cool down. Two rounds at 30 s is about 15 minutes. It matches the printable poster.
+## Routines
+Pick one on the start screen. The app remembers the last one used; `?routine=<id>` opens a specific one (handy for a home-screen shortcut each).
+
+| id | Routine | Moves | Timing |
+|---|---|---|---|
+| `kids` | My Strength Circuit: bodyweight, floor OK | squats, wall push-ups, glute bridges, bear crawl, plank, step-back lunges, flamingo balance | 30/40 s work, 20 s rest, 1-3 rounds, ~15 min for 2 |
+| `chair-counter` | Chair & Counter Strength: no floor, easy on the lower back, long rests | sit-to-stand, counter push-ups, seated shoulder press, side leg raises, band pull-aparts, counter kickbacks, seated march, calf raises | 30/40 s work, 30 s rest, 2 min between rounds, 1-3 rounds, ~23 min for 2 |
+
+Each matches a printable poster. To add a routine, write a `Routine` in `src/routines.ts` and add it to `ROUTINES`; the timings, rest drawing, colors and move list all come from there.
 
 ## On the tablet
 Open the page in Safari (iPad) or Chrome (Android) and use **Share → Add to Home Screen**. It then opens full screen like an app. The screen stays awake during a workout where the browser allows it (Screen Wake Lock). Sound needs the first tap on **Start**, and the mute switch off on an iPad.
@@ -16,7 +24,7 @@ npm run dev        # http://localhost:5173
 npm test           # browser tests (Playwright, fake clock, so a full workout runs in seconds)
 ```
 
-The moves and their drawings are in `src/moves.ts`; the order and timings in `src/plan.ts`.
+Routines, moves and drawings are in `src/routines.ts`; `src/plan.ts` turns a routine into the timed phases.
 
 ## Releasing
 Same flow as scavenger-v2. A release is one click, and you only merge the homelab PR.
