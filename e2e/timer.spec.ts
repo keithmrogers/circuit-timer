@@ -109,3 +109,74 @@ test("Stop goes back to the start screen", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Start" })).toBeVisible();
   await expect(page.getByRole("timer")).toBeHidden();
 });
+
+test.describe("routines", () => {
+  const CHAIR_MOVES = [
+    "Sit-to-stand",
+    "Counter push-ups",
+    "Seated shoulder press",
+    "Side leg raises",
+    "Band pull-aparts",
+    "Counter kickbacks",
+    "Seated march",
+    "Calf raises",
+  ];
+
+  test("picking a routine swaps the moves, timings and title, and is remembered", async ({ page }) => {
+    await open(page);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("My Strength Circuit");
+
+    await page.locator('label:has(input[name="routine"][value="chair-counter"])').click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chair & Counter Strength");
+    await expect(page.locator("#equipment")).toContainText("sturdy chair");
+    const list = page.getByRole("list", { name: "The moves" });
+    for (const name of CHAIR_MOVES) await expect(list.getByText(name, { exact: true })).toBeVisible();
+    await expect(list.getByText("Bear crawl")).toHaveCount(0);
+    // 5 + 180 + 16x30 work + 14x30 rest + 120 between rounds + 180 = 1385 s
+    await expect(page.locator("#total")).toHaveText("About 23 minutes");
+
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chair & Counter Strength");
+  });
+
+  test("?routine= opens that routine", async ({ page }) => {
+    await page.clock.install();
+    await page.goto("/?routine=chair-counter");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Chair & Counter Strength");
+  });
+
+  test("chair routine: 30 s rests and a switch-sides call halfway", async ({ page }) => {
+    await page.clock.install();
+    await page.goto("/?routine=chair-counter");
+    await page.getByLabel("Sounds and voice").uncheck();
+    await page.getByRole("button", { name: "Start" }).click();
+    const name = page.locator("#move-name");
+    const skip = page.getByRole("button", { name: "Skip" });
+
+    await skip.click(); // ready
+    await expect(name).toHaveText("Warm up");
+    await expect(page.getByRole("timer")).toHaveText("180");
+    await skip.click();
+    await expect(name).toHaveText("Sit-to-stand");
+    await page.clock.runFor(30_100);
+    await expect(name).toHaveText("Rest");
+    await expect(page.getByRole("timer")).toHaveText("30");
+    await expect(page.locator("#cue")).toHaveText("Sit down, breathe, sip some water.");
+
+    await skip.click(); // rest
+    await skip.click(); // counter push-ups
+    await skip.click(); // rest
+    await skip.click(); // shoulder press
+    await skip.click(); // rest
+    await expect(name).toHaveText("Side leg raises");
+    const banner = page.getByText("Switch sides!");
+    await expect(banner).toBeHidden();
+    await page.clock.runFor(14_000);
+    await expect(banner).toBeHidden();
+    await page.clock.runFor(1_200);
+    await expect(banner).toBeVisible();
+    await page.clock.runFor(15_000);
+    await expect(name).toHaveText("Rest");
+    await expect(banner).toBeHidden();
+  });
+});

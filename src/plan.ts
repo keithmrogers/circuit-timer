@@ -1,4 +1,4 @@
-import { COOL_DOWN, MOVES, REST, WARM_UP, type Move } from "./moves";
+import type { Move, Routine } from "./routines";
 
 export type PhaseKind = "ready" | "warm-up" | "work" | "rest" | "cool-down";
 
@@ -10,36 +10,33 @@ export interface Phase {
   round?: number;
 }
 
-export interface Settings {
+export interface Choices {
   rounds: number;
   workSeconds: number;
-  restSeconds: number;
 }
 
-export const DEFAULTS: Settings = { rounds: 2, workSeconds: 30, restSeconds: 20 };
-
-const READY: Move = { ...REST, id: "ready", name: "Get ready", cue: "Find some floor space." };
-
 /** Get ready, warm up, each move with a rest after it (a longer one between rounds), cool down. */
-export function buildPlan(s: Settings): Phase[] {
+export function buildPlan(routine: Routine, c: Choices): Phase[] {
+  const ready: Move = { ...routine.rest, id: "ready", name: "Get ready", cue: "Find your spot." };
   const plan: Phase[] = [
-    { kind: "ready", move: READY, seconds: 5 },
-    { kind: "warm-up", move: WARM_UP, seconds: 120 },
+    { kind: "ready", move: ready, seconds: 5 },
+    { kind: "warm-up", move: routine.warmUp, seconds: routine.warmUpSeconds },
   ];
-  for (let round = 1; round <= s.rounds; round++) {
-    MOVES.forEach((move, i) => {
-      plan.push({ kind: "work", move, seconds: s.workSeconds, round });
-      const lastMove = i === MOVES.length - 1;
-      if (lastMove && round === s.rounds) return; // straight into the cool down
+  const moves = routine.moves;
+  for (let round = 1; round <= c.rounds; round++) {
+    moves.forEach((move, i) => {
+      plan.push({ kind: "work", move, seconds: c.workSeconds, round });
+      const lastMove = i === moves.length - 1;
+      if (lastMove && round === c.rounds) return; // straight into the cool down
       plan.push({
         kind: "rest",
-        move: REST,
-        seconds: lastMove ? Math.max(60, s.restSeconds) : s.restSeconds,
+        move: routine.rest,
+        seconds: lastMove ? routine.roundRestSeconds : routine.restSeconds,
         round,
       });
     });
   }
-  plan.push({ kind: "cool-down", move: COOL_DOWN, seconds: 60 });
+  plan.push({ kind: "cool-down", move: routine.coolDown, seconds: routine.coolDownSeconds });
   return plan;
 }
 
