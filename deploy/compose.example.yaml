@@ -1,0 +1,15 @@
+# Copy to homelab as stacks/circuit-timer/compose.yaml. The release workflow bumps the image line.
+services:
+  circuit-timer:
+    # ghcr.io/keithmrogers/circuit-timer is built by CI
+    image: ghcr.io/keithmrogers/circuit-timer:v0.1.0
+    restart: unless-stopped
+    ports:
+      - "8090:8080" # or drop this and route through the reverse proxy
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s

@@ -1,0 +1,218 @@
+name: release
+
+# One-click release. Actions -> release -> Run workflow, pick a bump.
+#
+# plan   -> checks we are on main, works out the next vX.Y.Z, checks ci passed for this commit
+# image  -> builds and pushes ghcr.io/<owner>/circuit-timer:<tag> (same Dockerfile and actions as ci.yml's image job)
+# tag    -> creates the git tag, once the image exists, so a tag always means a published image
+# homelab-> opens a PR on <owner>/homelab bumping stacks/circuit-timer/compose.yaml. Keith merges it.
+#
+# A tag created with GITHUB_TOKEN does not trigger ci.yml, which is why this workflow builds the
+# image itself. If a job fails, use "Re-run failed jobs": finished jobs are not repeated.
+# Re-running the whole workflow after the tag job succeeded fails by design (the tag exists).
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Which part of the version to bump
+        type: choice
+        options: [minor, patch, major]
+        default: minor
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/circuit-timer
+  HOMELAB_COMPOSE: stacks/circuit-timer/compose.yaml
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read # to read the ci run for this commit
+    outputs:
+      tag: ${{ steps.version.outputs.next }}
+      previous: ${{ steps.version.outputs.previous }}
+    steps:
+      - name: Only release from main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Release only runs from main, but this run is on '$REF'. Pick 'main' in the Use workflow from dropdown."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # all tags, for the version and the compare link
+
+      - name: Next version
+        id: version
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          out="$(git tag --list 'v*' | .github/scripts/next-version.sh "$BUMP")"
+          echo "$out" | tee -a "$GITHUB_OUTPUT"
+          next="$(echo "$out" | sed -n 's/^next=//p')"
+          if git rev-parse -q --verify "refs/tags/$next" > /dev/null; then
+            echo "::error::Tag $next already exists."
+            exit 1
+          fi
+
+      - name: Check ci passed for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$SHA" --event push \
+            --json status,conclusion,url --limit 10 | .github/scripts/ci-gate.sh
+
+  image:
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ needs.plan.outputs.tag }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  tag:
+    needs: [plan, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag
+    steps:
+      - name: Create the tag on the released commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.tag }}
+          SHA: ${{ github.sha }}
+        run: |
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$TAG" -f sha="$SHA" --jq '.ref'
+
+  homelab:
+    needs: [plan, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # only to fetch .github/scripts here; homelab access uses HOMELAB_TOKEN
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      PREVIOUS: ${{ needs.plan.outputs.previous }}
+      HOMELAB: ${{ github.repository_owner }}/homelab
+      BRANCH: release/circuit-timer-${{ needs.plan.outputs.tag }}
+    steps:
+      - name: Check the HOMELAB_TOKEN secret
+        id: token
+        env:
+          HOMELAB_TOKEN: ${{ secrets.HOMELAB_TOKEN }}
+        run: |
+          if [ -n "$HOMELAB_TOKEN" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            msg="HOMELAB_TOKEN is not set, so no homelab PR was opened. $TAG is tagged and its image is pushed. Bump the image line in $HOMELAB_COMPOSE by hand, or add the secret (see README, Releasing) and re-run this job."
+            echo "::warning::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Check out homelab
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HOMELAB }}
+          token: ${{ secrets.HOMELAB_TOKEN }}
+          path: homelab
+
+      # The scripts live in this repo, so check it out too (sparse, just .github/scripts).
+      - name: Check out release scripts
+        if: steps.token.outputs.present == 'true'
+        uses: actions/checkout@v4
+        with:
+          path: circuit-timer
+          sparse-checkout: .github/scripts
+
+      - name: Open the homelab PR
+        if: steps.token.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.HOMELAB_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          existing="$(gh pr list --repo "$HOMELAB" --head "$BRANCH" --state open --json url --jq '.[0].url // empty')"
+          if [ -n "$existing" ]; then
+            echo "A PR for $BRANCH is already open: $existing"
+            echo "Homelab PR (already open): $existing" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          cd homelab
+          ../circuit-timer/.github/scripts/bump-compose.sh "$HOMELAB_COMPOSE" "$IMAGE" "$TAG"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$BRANCH"
+          git add "$HOMELAB_COMPOSE"
+          git commit -m "circuit-timer: bump to $TAG"
+          git push --force origin "$BRANCH"
+
+          if [ -n "$PREVIOUS" ]; then
+            changes="Commits since $PREVIOUS: $REPO_URL/compare/$PREVIOUS...$TAG"
+          else
+            changes="Commits: $REPO_URL/commits/$TAG"
+          fi
+          {
+            echo "Bumps the circuit-timer image to \`$TAG\`."
+            echo
+            echo "- Release run: $RUN_URL"
+            echo "- $changes"
+            echo
+            echo "Merging this redeploys the circuit-timer container. A workout in progress keeps running in the open tab."
+          } > "$RUNNER_TEMP/pr-body.md"
+
+          url="$(gh api --method POST "repos/$HOMELAB/pulls" \
+            -f title="circuit-timer: bump to $TAG" -f head="$BRANCH" -f base=main \
+            -F body=@"$RUNNER_TEMP/pr-body.md" --jq '.html_url')"
+          echo "Opened $url"
+          echo "Homelab PR: $url" >> "$GITHUB_STEP_SUMMARY"
