@@ -3,7 +3,34 @@
 
 export class Sounds {
   enabled = true;
+  /** voiceURI of the chosen voice; null means the tablet's default. */
+  voiceURI: string | null = null;
   private ctx: AudioContext | null = null;
+
+  /** English voices the tablet offers (all voices if it has no English ones), sorted. */
+  voices(): SpeechSynthesisVoice[] {
+    if (!("speechSynthesis" in window)) return [];
+    try {
+      const all = speechSynthesis.getVoices();
+      const english = all.filter((v) => v.lang.toLowerCase().startsWith("en"));
+      return (english.length ? english : all)
+        .slice()
+        .sort((a, b) => a.lang.localeCompare(b.lang) || a.name.localeCompare(b.name));
+    } catch {
+      return [];
+    }
+  }
+
+  /** Calls back now and whenever the tablet finishes loading its voices. */
+  onVoicesChanged(cb: () => void) {
+    if (!("speechSynthesis" in window)) return;
+    try {
+      speechSynthesis.addEventListener("voiceschanged", cb);
+    } catch {
+      /* older browsers: the list we have is the list */
+    }
+    cb();
+  }
 
   /** Call from a tap: browsers only allow audio that a user gesture started. */
   unlock() {
@@ -55,6 +82,11 @@ export class Sounds {
       speechSynthesis.cancel();
       const u = new SpeechSynthesisUtterance(text);
       u.rate = 1;
+      const voice = this.voiceURI ? this.voices().find((v) => v.voiceURI === this.voiceURI) : undefined;
+      if (voice) {
+        u.voice = voice;
+        u.lang = voice.lang;
+      }
       speechSynthesis.speak(u);
     } catch {
       /* no voice */
