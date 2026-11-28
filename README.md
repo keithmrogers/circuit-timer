@@ -10,6 +10,8 @@ Pick one on the start screen. The app remembers the last one used; `?routine=<id
 | `kids` | My Strength Circuit: bodyweight, floor OK | squats, wall push-ups, glute bridges, bear crawl, plank, step-back lunges, flamingo balance | 30/40 s work, 20 s rest, 1-3 rounds, ~15 min for 2 |
 | `chair-counter` | Chair & Counter Strength: no floor, easy on the lower back, long rests | sit-to-stand, counter push-ups, seated shoulder press, side leg raises, band pull-aparts, counter kickbacks, seated march, calf raises | 30/40 s work, 30 s rest, 2 min between rounds, 1-3 rounds, ~23 min for 2 |
 
+The start screen also has a **Voice** picker (the tablet's English voices, with a Test button). Each routine remembers its own voice, so each person keeps theirs. More voices: iPad Settings → Accessibility → Spoken Content → Voices (the Enhanced and Premium ones sound far better); Android: Settings → Text-to-speech.
+
 Each matches a printable poster. To add a routine, write a `Routine` in `src/routines.ts` and add it to `ROUTINES`; the timings, rest drawing, colors and move list all come from there.
 
 ## On the tablet

@@ -180,3 +180,72 @@ test.describe("routines", () => {
     await expect(banner).toBeHidden();
   });
 });
+
+test.describe("voice", () => {
+  // Headless Chromium has no voices, so stand in a fake speechSynthesis that records what it says.
+  async function fakeVoices(page: Page) {
+    await page.addInitScript(() => {
+      const voices = [
+        { name: "Samantha", lang: "en-US", voiceURI: "samantha", default: true, localService: true },
+        { name: "Daniel", lang: "en-GB", voiceURI: "daniel", default: false, localService: true },
+        { name: "Amélie", lang: "fr-CA", voiceURI: "amelie", default: false, localService: true },
+      ];
+      const spoken: { text: string; voice: string | null }[] = [];
+      (window as unknown as { spoken: typeof spoken }).spoken = spoken;
+      class Utterance {
+        text: string;
+        voice: { name: string } | null = null;
+        lang = "";
+        rate = 1;
+        constructor(text: string) {
+          this.text = text;
+        }
+      }
+      const synth = Object.assign(new EventTarget(), {
+        getVoices: () => voices,
+        speak: (u: Utterance) => spoken.push({ text: u.text, voice: u.voice?.name ?? null }),
+        cancel: () => undefined,
+      });
+      Object.defineProperty(window, "speechSynthesis", { value: synth, configurable: true });
+      Object.defineProperty(window, "SpeechSynthesisUtterance", { value: Utterance, configurable: true });
+    });
+  }
+  const spoken = (page: Page) =>
+    page.evaluate(() => (window as unknown as { spoken: { text: string; voice: string | null }[] }).spoken);
+
+  test("lists English voices, tests the chosen one, and remembers it per routine", async ({ page }) => {
+    await fakeVoices(page);
+    await page.goto("/");
+    const voice = page.getByLabel("Voice", { exact: true });
+    await expect(voice.locator("option")).toHaveText(["Tablet default", "Daniel (en-GB)", "Samantha (en-US)"]);
+
+    await voice.selectOption({ label: "Daniel (en-GB)" });
+    await page.getByRole("button", { name: "Test" }).click();
+    expect((await spoken(page)).at(-1)).toEqual({ text: "Hi! Next up, Squats.", voice: "Daniel" });
+
+    // The other routine keeps its own choice.
+    await page.locator('label:has(input[name="routine"][value="chair-counter"])').click();
+    await expect(voice).toHaveValue("");
+    await voice.selectOption({ label: "Samantha (en-US)" });
+
+    await page.reload();
+    await expect(voice).toHaveValue("samantha");
+    await page.locator('label:has(input[name="routine"][value="kids"])').click();
+    await expect(voice).toHaveValue("daniel");
+  });
+
+  test("the workout speaks in the chosen voice", async ({ page }) => {
+    await fakeVoices(page);
+    await page.clock.install();
+    await page.goto("/");
+    await page.getByLabel("Voice", { exact: true }).selectOption({ label: "Daniel (en-GB)" });
+    await page.getByRole("button", { name: "Start" }).click();
+    await page.getByRole("button", { name: "Skip" }).click(); // to the warm up
+    expect((await spoken(page)).at(-1)).toEqual({ text: "Warm up", voice: "Daniel" });
+  });
+
+  test("no voices on the tablet: no voice picker", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByLabel("Voice", { exact: true })).toBeHidden();
+  });
+});

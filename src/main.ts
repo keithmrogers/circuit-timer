@@ -7,6 +7,8 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 
 const RING = 2 * Math.PI * 52;
 const STORAGE_KEY = "circuit-timer:routine";
+// One voice per routine, so each person keeps the voice they picked.
+const voiceKey = (routineId: string) => `circuit-timer:voice:${routineId}`;
 
 let routine: Routine = ROUTINES[0];
 let plan: Phase[] = [];
@@ -29,6 +31,47 @@ function savedRoutineId(): string | null {
   } catch {
     return null;
   }
+}
+
+function load(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function store(key: string, value: string | null) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, value);
+  } catch {
+    /* private mode: just don't remember */
+  }
+}
+
+// ---------- voice ----------
+
+function renderVoices() {
+  const voices = sounds.voices();
+  $("voice-row").hidden = voices.length === 0;
+  const select = $<HTMLSelectElement>("voice");
+  select.innerHTML =
+    `<option value="">Tablet default</option>` +
+    voices
+      .map((v) => `<option value="${escapeAttr(v.voiceURI)}">${escapeHtml(v.name)} (${escapeHtml(v.lang)})</option>`)
+      .join("");
+  const saved = load(voiceKey(routine.id));
+  sounds.voiceURI = saved && voices.some((v) => v.voiceURI === saved) ? saved : null;
+  select.value = sounds.voiceURI ?? "";
+}
+
+function escapeHtml(text: string) {
+  return text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] as string);
+}
+
+function escapeAttr(text: string) {
+  return escapeHtml(text).replace(/"/g, "&quot;");
 }
 
 function saveRoutineId(id: string) {
@@ -72,6 +115,7 @@ function selectRoutine(r: Routine) {
     .map((m) => `<li><svg viewBox="0 0 160 92" aria-hidden="true">${m.art}</svg><span>${m.name}</span></li>`)
     .join("");
 
+  renderVoices();
   for (const input of document.querySelectorAll<HTMLInputElement>('input[name="routine"]')) {
     input.checked = input.value === r.id;
   }
@@ -240,6 +284,15 @@ function skip() {
 }
 
 $("start").addEventListener("click", start);
+$<HTMLSelectElement>("voice").addEventListener("change", (e) => {
+  const value = (e.target as HTMLSelectElement).value || null;
+  sounds.voiceURI = value;
+  store(voiceKey(routine.id), value);
+});
+$("voice-test").addEventListener("click", () => {
+  sounds.enabled = true;
+  sounds.say(`Hi! Next up, ${routine.moves[0].name}.`);
+});
 $("pause").addEventListener("click", togglePause);
 $("skip").addEventListener("click", skip);
 $("quit").addEventListener("click", () => {
@@ -252,5 +305,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 renderRoutineList();
+sounds.onVoicesChanged(() => renderVoices());
 selectRoutine(findRoutine(savedRoutineId()) ?? ROUTINES[0]);
 showScreen("setup");
